@@ -1,12 +1,33 @@
 import os
 import logging
 import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import httpx
 import yfinance as yf
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
+
+# ------------------------------------------------------------------------------
+# 🌐 DUMMY DOCKER/RENDER HEALTH CHECK HTTP SERVER
+# ------------------------------------------------------------------------------
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK - Bot is running")
+
+def start_health_check_server():
+    port = int(os.environ.get("PORT", 8000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    logging.info(f"🌐 Health check HTTP server listening on port {port}")
+    server.serve_forever()
+
+# Start HTTP server in a background daemon thread for Render port scanning
+threading.Thread(target=start_health_check_server, daemon=True).start()
 
 # ------------------------------------------------------------------------------
 # 🔑 CONFIGURATION (CODEX / 9ROUTER API & TELEGRAM)
@@ -249,7 +270,6 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.message.reply_text("🔘 *សេរី Menu សម្រាប់ចុចជ្រើសរើស៖*", reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
 def main():
-    # Explicitly set event loop for Python 3.14+ compatibility on Render
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
