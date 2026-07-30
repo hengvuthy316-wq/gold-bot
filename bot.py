@@ -1,17 +1,19 @@
 import os
 import logging
+import httpx
 import yfinance as yf
-from google import genai
-from google.genai import types
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
 
+# ------------------------------------------------------------------------------
+# 🔑 CONFIGURATION (CODEX / 9ROUTER API & TELEGRAM)
+# ------------------------------------------------------------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+CODEX_API_KEY = os.environ.get("CODEX_API_KEY", "sk_9router_default")
+CODEX_BASE_URL = os.environ.get("CODEX_BASE_URL", "https://9router-production-4db4.up.railway.app/v1")
+CODEX_MODEL = os.environ.get("CODEX_MODEL", "cx/gpt-5.6-terra")
 
 # ------------------------------------------------------------------------------
 # 📊 TECHNICAL INDICATOR CALCULATOR (MULTI-TIMEFRAME)
@@ -49,7 +51,7 @@ def get_gold_data_by_timeframe(interval="15m", period="5d"):
         ema50 = round(hist['EMA50'].iloc[-1], 2)
         rsi = round(hist['RSI'].iloc[-1], 2)
 
-        # Cambodian Gold Price Conversion
+        # Cambodian Gold Price Conversion (37.5g per Damlung, 3.75g per Chi)
         price_per_gram = current_price / 31.1034768
         price_damlung = round(price_per_gram * 37.5, 2)
         price_chi = round(price_damlung / 10, 2)
@@ -71,6 +73,31 @@ def get_gold_data_by_timeframe(interval="15m", period="5d"):
     except Exception as e:
         logging.error(f"Error fetching data for {interval}: {e}")
         return None
+
+# ------------------------------------------------------------------------------
+# 🧠 CODEX / 9ROUTER AI CALLER (OPENAI-COMPATIBLE)
+# ------------------------------------------------------------------------------
+async def ask_codex_ai(prompt: str, system_instruction: str) -> str:
+    """Calls Codex cx/gpt-5.6-terra via 9Router Railway endpoint"""
+    url = f"{CODEX_BASE_URL.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {CODEX_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": CODEX_MODEL,
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.7
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        res_data = response.json()
+        return res_data["choices"][0]["message"]["content"]
 
 # ------------------------------------------------------------------------------
 # 🔘 INLINE KEYBOARD MENU HELPER
@@ -97,7 +124,7 @@ def get_main_menu_keyboard():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
-        "⚡ *សួស្តី! ខ្ញុំជា Pro SMC Gold Trading Bot (Multi-Timeframe)!* 🪙📈\n\n"
+        "⚡ *សួស្តី! ខ្ញុំជា Pro Gold Trading Bot (Powered by Codex cx/gpt-5.6-terra)!* 🪙📈\n\n"
         "សូមជ្រើសរើសប៊ូតុងខាងក្រោមដើម្បីមើលតម្លៃមាស ឬវិភាគទីផ្សារ SMC (Smart Money Concepts):"
     )
     if update.message:
@@ -127,11 +154,11 @@ async def render_gold_price(send_func):
     )
     await send_func(msg, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
-# AI Analysis Renderer (SMC & Smart Money Setup)
+# AI Analysis Renderer (Using Codex cx/gpt-5.6-terra)
 async def render_timeframe_analysis(send_func, interval: str, style_name: str, period: str):
     data = get_gold_data_by_timeframe(interval, period)
-    if not data or not ai_client:
-        await send_func("❌ មិនអាចទាញទិន្នន័យ ឬ AI មិនទាន់ ready ទេ។")
+    if not data:
+        await send_func("❌ មិនអាចទាញទិន្នន័យបានទេ។")
         return
 
     rsi_status = "Overbought 🔴" if data['rsi'] > 70 else "Oversold 🟢" if data['rsi'] < 30 else "Neutral 🟡"
@@ -161,29 +188,19 @@ async def render_timeframe_analysis(send_func, interval: str, style_name: str, p
     ៥. ⚠️ *ការគ្រប់គ្រងហានិភ័យ (Risk & Money Management):*
     """
 
+    system_instruction = f"អ្នកគឺជា Codex Pro Trader (cx/gpt-5.6-terra) ជំនាញ XAU/USD (Timeframe {interval})។ សរសេររបាយការណ៍ជា Telegram Markdown (*bold* មិនប្រើ ** ទេ!) ខ្លី ខ្លឹម ច្បាស់លាស់បំផុត។"
+
     try:
-        system_instruction = f"អ្នកគឺជា SMC Pro Trader ជំនាញ XAU/USD (Timeframe {interval})។ សរសេររបាយការណ៍ជា Telegram Markdown (*bold* មិនប្រើ ** ទេ!) ខ្លី ខ្លឹម ច្បាស់លាស់បំផុត។"
-        
-        response = ai_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(system_instruction=system_instruction)
-        )
+        ai_reply = await ask_codex_ai(prompt, system_instruction)
         
         header = f"⚡ *[{style_name} - Timeframe {interval}]*\n\n"
-        full_text = header + response.text
-        
-        # Clean double asterisks if AI outputted them so Telegram Markdown parses cleanly
+        full_text = header + ai_reply
         clean_text = full_text.replace("**", "*")
         
         await send_func(clean_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
     except Exception as e:
-        logging.error(f"Analysis Error: {e}")
-        # Fallback if markdown parsing error occurs
-        try:
-            await send_func(f"⚡ [{style_name} - Timeframe {interval}]\n\n" + response.text, reply_markup=get_main_menu_keyboard())
-        except Exception:
-            await send_func("❌ មានបញ្ហាក្នុងការបង្ហាញរបាយការណ៍ AI!")
+        logging.error(f"Codex AI Error: {e}")
+        await send_func(f"❌ មានបញ្ហាក្នុងការភ្ជាប់ទៅកាន់ Codex AI (cx/gpt-5.6-terra): {e}")
 
 # Command Callers
 async def cmd_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -231,7 +248,7 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.message.reply_text("🔘 *សេរី Menu សម្រាប់ចុចជ្រើសរើស៖*", reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
 def main():
-    print("🤖 Starting Pro Gold SMC Trading Bot...")
+    print("🤖 Starting Pro Gold Codex Trading Bot (cx/gpt-5.6-terra)...")
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Commands
@@ -251,7 +268,7 @@ def main():
     # Button Clicks
     app.add_handler(CallbackQueryHandler(handle_button_click))
 
-    print("✅ Pro Gold SMC Bot is running...")
+    print("✅ Pro Gold Codex Bot is running...")
     app.run_polling(poll_interval=1.0)
 
 if __name__ == "__main__":
