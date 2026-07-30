@@ -3,8 +3,8 @@ import logging
 import yfinance as yf
 from google import genai
 from google.genai import types
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
 
@@ -49,7 +49,7 @@ def get_gold_data_by_timeframe(interval="1h", period="5d"):
         ema50 = round(hist['EMA50'].iloc[-1], 2)
         rsi = round(hist['RSI'].iloc[-1], 2)
 
-        # Cambodian Gold Price Conversion (37.5g per Damlung, 3.75g per Chi)
+        # Cambodian Gold Price Conversion
         price_per_gram = current_price / 31.1034768
         price_damlung = round(price_per_gram * 37.5, 2)
         price_chi = round(price_damlung / 10, 2)
@@ -73,26 +73,41 @@ def get_gold_data_by_timeframe(interval="1h", period="5d"):
         return None
 
 # ------------------------------------------------------------------------------
-# 🤖 BOT COMMANDS
+# 🔘 INLINE KEYBOARD MENU HELPER
+# ------------------------------------------------------------------------------
+def get_main_menu_keyboard():
+    keyboard = [
+        [
+            InlineKeyboardButton("💵 តម្លៃមាស Real-time", callback_data="btn_gold"),
+        ],
+        [
+            InlineKeyboardButton("⚡ Scalping (15m)", callback_data="btn_scalp"),
+            InlineKeyboardButton("📊 Day Trade (1h)", callback_data="btn_day"),
+        ],
+        [
+            InlineKeyboardButton("🌊 Swing Trade (4h)", callback_data="btn_swing"),
+            InlineKeyboardButton("🔄 Refresh Menu", callback_data="btn_menu"),
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# ------------------------------------------------------------------------------
+# 🤖 BOT COMMANDS & CALLBACK HANDLERS
 # ------------------------------------------------------------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_markdown(
-        "👋 **សួស្តី! ខ្ញុំជា Multi-Timeframe Gold Trading Bot!** 🪙📈\n\n"
-        "🛠 **Commands តាមប្រភេទ Trading Style ៖**\n"
-        "• `/gold` — តម្លៃមាស Real-time + តម្លៃមាសស្រុកខ្មែរ (តម្លឹង/ជី)\n"
-        "• `/scalp` ឬ `/15m` — ⚡ **Scalping Mode (15-Min Timeframe)**\n"
-        "• `/day` ឬ `/1h` — 📊 **Day Trading Mode (1-Hour Timeframe)**\n"
-        "• `/swing` ឬ `/4h` — 🌊 **Swing Trading Mode (4-Hour Timeframe)**\n"
+    welcome_text = (
+        "👋 **សួស្តី! ខ្ញុំជា Pro Gold Trading Bot (Multi-Timeframe)!** 🪙📈\n\n"
+        "សូមជ្រើសរើសប៊ូតុងខាងក្រោមដើម្បីមើលតម្លៃមាស ឬវិភាគទីផ្សារ៖"
     )
+    if update.message:
+        await update.message.reply_markdown(welcome_text, reply_markup=get_main_menu_keyboard())
 
-# 1. Realtime Price /gold
-async def cmd_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.chat.send_action(action="typing")
+# Real-time Price Renderer
+async def render_gold_price(send_func):
     data = get_gold_data_by_timeframe("1h", "5d")
-    
     if not data:
-        await update.message.reply_text("❌ មិនអាចទាញទិន្នន័យទីផ្សារមាសបានទេនៅពេលនេះ!")
+        await send_func("❌ មិនអាចទាញទិន្នន័យទីផ្សារមាសបានទេនៅពេលនេះ!")
         return
 
     status_icon = "🟢 +" if data['change'] >= 0 else "🔴 "
@@ -108,17 +123,15 @@ async def cmd_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🥇 **១ តម្លឹង:** `${data['price_damlung']}`\n"
         f"🥈 **១ ជី:** `${data['price_chi']}`\n"
         "-----------------------------------\n"
-        "💡 ជ្រើសរើស Mode វិភាគ៖ `/scalp` (15m), `/day` (1h), `/swing` (4h)"
+        "👇 **ជ្រើសរើស Mode វិភាគខាងក្រោម៖**"
     )
-    await update.message.reply_markdown(msg)
+    await send_func(msg, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
-# Generic Analyzer Engine
-async def analyze_timeframe(update: Update, interval: str, style_name: str, period: str):
-    await update.message.chat.send_action(action="typing")
+# AI Analysis Renderer
+async def render_timeframe_analysis(send_func, interval: str, style_name: str, period: str):
     data = get_gold_data_by_timeframe(interval, period)
-    
     if not data or not ai_client:
-        await update.message.reply_text("❌ មិនអាចទាញទិន្នន័យ ឬ AI មិនទាន់ ready ទេ។")
+        await send_func("❌ មិនអាចទាញទិន្នន័យ ឬ AI មិនទាន់ ready ទេ។")
         return
 
     rsi_status = "Overbought 🔴" if data['rsi'] > 70 else "Oversold 🟢" if data['rsi'] < 30 else "Neutral 🟡"
@@ -152,46 +165,78 @@ async def analyze_timeframe(update: Update, interval: str, style_name: str, peri
             contents=prompt,
             config=types.GenerateContentConfig(system_instruction=system_instruction)
         )
-        await update.message.reply_text(f"⚡ **[{style_name} MODE - Timeframe {interval}]**\n\n" + response.text)
+        await send_func(f"⚡ **[{style_name} MODE - Timeframe {interval}]**\n\n" + response.text, reply_markup=get_main_menu_keyboard())
     except Exception as e:
         logging.error(f"Analysis Error: {e}")
-        await update.message.reply_text("❌ មានបញ្ហាក្នុងការវិភាគ AI!")
+        await send_func("❌ មានបញ្ហាក្នុងការវិភាគ AI!")
 
-# 2. Scalping Mode (15m)
+# Command Callers
+async def cmd_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.chat.send_action(action="typing")
+    await render_gold_price(update.message.reply_text)
+
 async def cmd_scalp(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await analyze_timeframe(update, "15m", "Scalping Mode (ខ្លីរហ័ស)", "2d")
+    await update.message.chat.send_action(action="typing")
+    await render_timeframe_analysis(update.message.reply_text, "15m", "Scalping Mode (ខ្លីរហ័ស)", "2d")
 
-# 3. Day Trading Mode (1h)
 async def cmd_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await analyze_timeframe(update, "1h", "Day Trading Mode (ក្នុងថ្ងៃ)", "5d")
+    await update.message.chat.send_action(action="typing")
+    await render_timeframe_analysis(update.message.reply_text, "1h", "Day Trading Mode (ក្នុងថ្ងៃ)", "5d")
 
-# 4. Swing Trading Mode (4h)
 async def cmd_swing(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await analyze_timeframe(update, "4h", "Swing Trading Mode (២-៣ថ្ងៃ)", "1mo")
+    await update.message.chat.send_action(action="typing")
+    await render_timeframe_analysis(update.message.reply_text, "4h", "Swing Trading Mode (២-៣ថ្ងៃ)", "1mo")
+
+# Button Click Handler
+async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer() # Acknowledge button click
+    
+    data = query.data
+
+    async def reply_from_button(text, reply_markup=None, parse_mode=None):
+        if parse_mode:
+            await query.message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+        else:
+            await query.message.reply_text(text, reply_markup=reply_markup)
+
+    if data == "btn_gold":
+        await query.message.chat.send_action(action="typing")
+        await render_gold_price(reply_from_button)
+    elif data == "btn_scalp":
+        await query.message.chat.send_action(action="typing")
+        await render_timeframe_analysis(reply_from_button, "15m", "Scalping Mode (ខ្លីរហ័ស)", "2d")
+    elif data == "btn_day":
+        await query.message.chat.send_action(action="typing")
+        await render_timeframe_analysis(reply_from_button, "1h", "Day Trading Mode (ក្នុងថ្ងៃ)", "5d")
+    elif data == "btn_swing":
+        await query.message.chat.send_action(action="typing")
+        await render_timeframe_analysis(reply_from_button, "4h", "Swing Trading Mode (២-៣ថ្ងៃ)", "1mo")
+    elif data == "btn_menu":
+        await query.message.reply_text("🔘 **សេរី Menu សម្រាប់ចុចជ្រើសរើស៖**", reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
 def main():
-    print("🤖 Starting Multi-Timeframe Gold Bot...")
+    print("🤖 Starting Pro Gold Trading Bot with Interactive Buttons...")
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # Commands
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("menu", start))
     app.add_handler(CommandHandler("gold", cmd_gold))
     app.add_handler(CommandHandler("price", cmd_gold))
-    
-    # Scalping (15m)
     app.add_handler(CommandHandler("scalp", cmd_scalp))
     app.add_handler(CommandHandler("15m", cmd_scalp))
-    
-    # Day Trading (1h)
     app.add_handler(CommandHandler("day", cmd_day))
     app.add_handler(CommandHandler("1h", cmd_day))
     app.add_handler(CommandHandler("trader", cmd_day))
     app.add_handler(CommandHandler("analyze", cmd_day))
-
-    # Swing Trading (4h)
     app.add_handler(CommandHandler("swing", cmd_swing))
     app.add_handler(CommandHandler("4h", cmd_swing))
 
-    print("✅ Multi-Timeframe Gold Bot is running...")
+    # Button Clicks
+    app.add_handler(CallbackQueryHandler(handle_button_click))
+
+    print("✅ Pro Gold Bot with Buttons is running...")
     app.run_polling(poll_interval=1.0)
 
 if __name__ == "__main__":
