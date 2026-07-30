@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 import httpx
 import yfinance as yf
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -51,7 +52,7 @@ def get_gold_data_by_timeframe(interval="15m", period="5d"):
         ema50 = round(hist['EMA50'].iloc[-1], 2)
         rsi = round(hist['RSI'].iloc[-1], 2)
 
-        # Cambodian Gold Price Conversion (37.5g per Damlung, 3.75g per Chi)
+        # Cambodian Gold Price Conversion
         price_per_gram = current_price / 31.1034768
         price_damlung = round(price_per_gram * 37.5, 2)
         price_chi = round(price_damlung / 10, 2)
@@ -154,7 +155,7 @@ async def render_gold_price(send_func):
     )
     await send_func(msg, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
-# AI Analysis Renderer (Using Codex cx/gpt-5.6-terra)
+# AI Analysis Renderer
 async def render_timeframe_analysis(send_func, interval: str, style_name: str, period: str):
     data = get_gold_data_by_timeframe(interval, period)
     if not data:
@@ -248,6 +249,13 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.message.reply_text("🔘 *សេរី Menu សម្រាប់ចុចជ្រើសរើស៖*", reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
 def main():
+    # Explicitly set event loop for Python 3.14+ compatibility on Render
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     print("🤖 Starting Pro Gold Codex Trading Bot (cx/gpt-5.6-terra)...")
     app = Application.builder().token(BOT_TOKEN).build()
 
