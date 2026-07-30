@@ -24,7 +24,7 @@ def calculate_rsi(series, period=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-def get_gold_data_by_timeframe(interval="1h", period="5d"):
+def get_gold_data_by_timeframe(interval="15m", period="5d"):
     try:
         gold = yf.Ticker("GC=F") # Gold Futures (XAU/USD)
         hist = gold.history(period=period, interval=interval)
@@ -66,7 +66,7 @@ def get_gold_data_by_timeframe(interval="1h", period="5d"):
             "rsi": rsi,
             "price_damlung": price_damlung,
             "price_chi": price_chi,
-            "raw_history": hist[['Close', 'EMA20', 'EMA50', 'RSI']].tail(10).to_string()
+            "raw_history": hist[['Open', 'High', 'Low', 'Close', 'EMA20', 'EMA50', 'RSI']].tail(12).to_string()
         }
     except Exception as e:
         logging.error(f"Error fetching data for {interval}: {e}")
@@ -97,15 +97,15 @@ def get_main_menu_keyboard():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
-        "👋 **សួស្តី! ខ្ញុំជា Pro Gold Trading Bot (Multi-Timeframe)!** 🪙📈\n\n"
-        "សូមជ្រើសរើសប៊ូតុងខាងក្រោមដើម្បីមើលតម្លៃមាស ឬវិភាគទីផ្សារ៖"
+        "⚡ *សួស្តី! ខ្ញុំជា Pro SMC Gold Trading Bot (Multi-Timeframe)!* 🪙📈\n\n"
+        "សូមជ្រើសរើសប៊ូតុងខាងក្រោមដើម្បីមើលតម្លៃមាស ឬវិភាគទីផ្សារ SMC (Smart Money Concepts):"
     )
     if update.message:
-        await update.message.reply_markdown(welcome_text, reply_markup=get_main_menu_keyboard())
+        await update.message.reply_text(welcome_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
 # Real-time Price Renderer
 async def render_gold_price(send_func):
-    data = get_gold_data_by_timeframe("1h", "5d")
+    data = get_gold_data_by_timeframe("15m", "5d")
     if not data:
         await send_func("❌ មិនអាចទាញទិន្នន័យទីផ្សារមាសបានទេនៅពេលនេះ!")
         return
@@ -113,21 +113,21 @@ async def render_gold_price(send_func):
     status_icon = "🟢 +" if data['change'] >= 0 else "🔴 "
     
     msg = (
-        "🪙 **របាយការណ៍តម្លៃមាស (XAU/USD & ស្រុកខ្មែរ)**\n"
+        "🪙 *របាយការណ៍តម្លៃមាស (XAU/USD & ស្រុកខ្មែរ)*\n"
         "-----------------------------------\n"
-        f"💵 **XAU/USD Spot:** `${data['price']}` / oz\n"
-        f"📊 **ការប្រែប្រួល:** {status_icon}${data['change']} ({data['change_pct']}%)\n"
-        f"📈 **High (24h):** `${data['high']}` | 📉 **Low (24h):** `${data['low']}`\n"
+        f"💵 *XAU/USD Spot:* `${data['price']}` / oz\n"
+        f"📊 *ការប្រែប្រួល:* {status_icon}${data['change']} ({data['change_pct']}%)\n"
+        f"📈 *High (24h):* `${data['high']}` | 📉 *Low (24h):* `${data['low']}`\n"
         "-----------------------------------\n"
-        "🇰🇭 **ប្រៀបធៀបតម្លៃមាសស្រុកខ្មែរ (ប៉ាន់ស្មាន)៖**\n"
-        f"🥇 **១ តម្លឹង:** `${data['price_damlung']}`\n"
-        f"🥈 **១ ជី:** `${data['price_chi']}`\n"
+        "🇰🇭 *ប្រៀបធៀបតម្លៃមាសស្រុកខ្មែរ (ប៉ាន់ស្មាន)៖*\n"
+        f"🥇 *១ តម្លឹង:* `${data['price_damlung']}`\n"
+        f"🥈 *១ ជី:* `${data['price_chi']}`\n"
         "-----------------------------------\n"
-        "👇 **ជ្រើសរើស Mode វិភាគខាងក្រោម៖**"
+        "👇 *ជ្រើសរើស Mode វិភាគខាងក្រោម៖*"
     )
     await send_func(msg, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
-# AI Analysis Renderer
+# AI Analysis Renderer (SMC & Smart Money Setup)
 async def render_timeframe_analysis(send_func, interval: str, style_name: str, period: str):
     data = get_gold_data_by_timeframe(interval, period)
     if not data or not ai_client:
@@ -137,38 +137,53 @@ async def render_timeframe_analysis(send_func, interval: str, style_name: str, p
     rsi_status = "Overbought 🔴" if data['rsi'] > 70 else "Oversold 🟢" if data['rsi'] < 30 else "Neutral 🟡"
 
     prompt = f"""
-    អ្នកគឺជា Pro Trader ជំនាញវិភាគទីផ្សារមាស (XAU/USD) សម្រាប់ប្រភេទ {style_name} (Timeframe: {interval})។
-    ទិន្នន័យបច្ចេកទេសបច្ចុប្បន្ន៖
-    - តម្លៃ: ${data['price']} (High: ${data['high']}, Low: ${data['low']})
+    អ្នកគឺជា Pro SMC (Smart Money Concepts) & Price Action Gold Trader លើទីផ្សារ XAU/USD (Timeframe: {interval})។
+    ទិន្នន័យ Candle & Indicators បច្ចុប្បន្ន៖
+    - តម្លៃបច្ចុប្បន្ន: ${data['price']} (High 24h: ${data['high']}, Low 24h: ${data['low']})
     - EMA 20: ${data['ema20']} | EMA 50: ${data['ema50']}
     - RSI (14): {data['rsi']} ({rsi_status})
-    - ទិន្នន័យប្រវត្តិ {interval}:
+    - តារាងប្រវត្តិ Candle 12 ចុងក្រោយ ({interval}):
     {data['raw_history']}
 
-    សូមធ្វើការវិភាគសម្រាប់ {style_name} ជាភាសាខ្មែរ៖
-    1. 📈 **ទិសដៅទីផ្សារ (Trend {interval}):** (Bullish / Bearish / Sideways)
-    2. 📊 **ភាគរយសញ្ញា Indicators:** RSI condition, EMA Cross
-    3. 🛡 **តំបន់គាំទ្រ & ទប់ (Support/Resistance សម្រាប់ {interval}):**
-    4. 🎯 **Trading Setup ({style_name}):**
-       - Action: (BUY / SELL / WAIT)
-       - Entry Price: $...
-       - Take Profit (TP): $...
-       - Stop Loss (SL): $...
-    ⚠️ **៥. ការគ្រប់គ្រងហានិភ័យ (Risk Management):**
+    សូមធ្វើការវិភាគ Smart Money Concepts (SMC) & Trading Setup សម្រាប់ {style_name} ជាភាសាខ្មែរ (ប្រើ Markdown ស្អាត):
+
+    ១. 📈 *រចនាសម្ព័ន្ធទីផ្សារ (Market Structure {interval}):* (BULLISH / BEARISH / SIDEWAYS) + (BOS/CHoCH Status)
+    ២. 📊 *សញ្ញា Indicators & Momentum:* RSI Condition, EMA Trend Support/Resistance
+    ៣. 🛡 *តំបន់ POI (Demand Zone / Supply Zone & Order Block):*
+       - Supply / Resistance Zone: $...
+       - Demand / Support Zone: $...
+    ៤. 🎯 *Trading Setup ({style_name}):*
+       - *Next Step:* (WAIT RETEST / BUY ON DEMAND / SELL ON SUPPLY)
+       - *Action:* (BUY / SELL / WAIT)
+       - *Entry Price:* $...
+       - *Take Profit (TP):* $...
+       - *Stop Loss (SL):* $...
+    ៥. ⚠️ *ការគ្រប់គ្រងហានិភ័យ (Risk & Money Management):*
     """
 
     try:
-        system_instruction = f"អ្នកគឺជា Pro Trader ជំនាញ {style_name} លើទីផ្សារមាស XAU/USD (Timeframe {interval})។ សរសេររបាយការណ៍ខ្លី ខ្លឹម ច្បាស់លាស់បំផុត។"
+        system_instruction = f"អ្នកគឺជា SMC Pro Trader ជំនាញ XAU/USD (Timeframe {interval})។ សរសេររបាយការណ៍ជា Telegram Markdown (*bold* មិនប្រើ ** ទេ!) ខ្លី ខ្លឹម ច្បាស់លាស់បំផុត។"
         
         response = ai_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(system_instruction=system_instruction)
         )
-        await send_func(f"⚡ **[{style_name} MODE - Timeframe {interval}]**\n\n" + response.text, reply_markup=get_main_menu_keyboard())
+        
+        header = f"⚡ *[{style_name} - Timeframe {interval}]*\n\n"
+        full_text = header + response.text
+        
+        # Clean double asterisks if AI outputted them so Telegram Markdown parses cleanly
+        clean_text = full_text.replace("**", "*")
+        
+        await send_func(clean_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Analysis Error: {e}")
-        await send_func("❌ មានបញ្ហាក្នុងការវិភាគ AI!")
+        # Fallback if markdown parsing error occurs
+        try:
+            await send_func(f"⚡ [{style_name} - Timeframe {interval}]\n\n" + response.text, reply_markup=get_main_menu_keyboard())
+        except Exception:
+            await send_func("❌ មានបញ្ហាក្នុងការបង្ហាញរបាយការណ៍ AI!")
 
 # Command Callers
 async def cmd_gold(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -190,7 +205,7 @@ async def cmd_swing(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Button Click Handler
 async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer() # Acknowledge button click
+    await query.answer()
     
     data = query.data
 
@@ -213,10 +228,10 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.message.chat.send_action(action="typing")
         await render_timeframe_analysis(reply_from_button, "4h", "Swing Trading Mode (២-៣ថ្ងៃ)", "1mo")
     elif data == "btn_menu":
-        await query.message.reply_text("🔘 **សេរី Menu សម្រាប់ចុចជ្រើសរើស៖**", reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+        await query.message.reply_text("🔘 *សេរី Menu សម្រាប់ចុចជ្រើសរើស៖*", reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
 
 def main():
-    print("🤖 Starting Pro Gold Trading Bot with Interactive Buttons...")
+    print("🤖 Starting Pro Gold SMC Trading Bot...")
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Commands
@@ -236,7 +251,7 @@ def main():
     # Button Clicks
     app.add_handler(CallbackQueryHandler(handle_button_click))
 
-    print("✅ Pro Gold Bot with Buttons is running...")
+    print("✅ Pro Gold SMC Bot is running...")
     app.run_polling(poll_interval=1.0)
 
 if __name__ == "__main__":
